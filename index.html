@@ -153,9 +153,33 @@ const area=()=>({W:innerWidth,H:innerHeight});
 const pool=()=>names.map((n,i)=>({n,i})).filter(o=>!(S.noRepeat&&S.won.includes(o.i)));
 
 /* ---------- sound ---------- */
-let ac=null;
-function tone(f,t0,dur,type='sine',vol=.12,f2){if(!sound)return;try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime+t0;o.type=type;o.frequency.setValueAtTime(f,t);if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+dur);g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+.03);g.gain.exponentialRampToValueAtTime(.0001,t+dur);o.connect(g).connect(ac.destination);o.start(t);o.stop(t+dur+.05)}catch(e){}}
-const sfx={rise(d){tone(180,0,d,'sine',.08,900);tone(270,0,d,'triangle',.04,1350)},chime(){[784,988,1175,1568].forEach((f,i)=>tone(f,i*.12,.9,'triangle',.1))},ding(){tone(1320,0,.6,'triangle',.12);tone(1980,.02,.5,'sine',.05)},whoosh(){tone(900,0,.6,'sine',.05,200)}};
+let ac=null,master,rev,nb=null;
+function A(){if(ac)return ac;ac=new (window.AudioContext||window.webkitAudioContext)();master=ac.createGain();master.gain.value=.9;master.connect(ac.destination);
+ rev=ac.createConvolver();const len=Math.floor(ac.sampleRate*2.2),b=ac.createBuffer(2,len,ac.sampleRate);for(let c=0;c<2;c++){const d=b.getChannelData(c);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3)}rev.buffer=b;const rg=ac.createGain();rg.gain.value=.35;rev.connect(rg).connect(master);
+ nb=ac.createBuffer(1,ac.sampleRate*2,ac.sampleRate);const nd=nb.getChannelData(0);for(let i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;return ac}
+function out(node,wet){node.connect(master);if(wet){const g=ac.createGain();g.gain.value=wet;node.connect(g).connect(rev)}}
+function tone(f,t0,dur,o={}){if(!sound)return;try{A();const {type='sine',vol=.12,f2=null,wet=.4,attack=.01}=o,t=ac.currentTime+t0,os=ac.createOscillator(),g=ac.createGain();os.type=type;os.frequency.setValueAtTime(f,t);if(f2)os.frequency.exponentialRampToValueAtTime(f2,t+dur);g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+attack);g.gain.exponentialRampToValueAtTime(.0001,t+dur);os.connect(g);out(g,wet);os.start(t);os.stop(t+dur+.05)}catch(e){}}
+function noise(t0,dur,o={}){if(!sound)return;try{A();const {vol=.2,freq=2000,q=1,type='bandpass',f2=null,wet=.2,attack=.003}=o,t=ac.currentTime+t0,s=ac.createBufferSource(),f=ac.createBiquadFilter(),g=ac.createGain();s.buffer=nb;f.type=type;f.frequency.setValueAtTime(freq,t);if(f2)f.frequency.exponentialRampToValueAtTime(f2,t+dur);f.Q.value=q;g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+attack);g.gain.exponentialRampToValueAtTime(.0001,t+dur);s.connect(f).connect(g);out(g,wet);s.start(t,Math.random());s.stop(t+dur+.05)}catch(e){}}
+const PENTA=[523.25,587.33,659.25,783.99,880,1046.5,1174.66,1318.5,1567.98,1760,2093];
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+const sfx={
+ start(){[523,659,784,1047,1319,1568,2093].forEach((f,i)=>tone(f,i*.05,.7,{type:'triangle',vol:.08,wet:.6}));noise(0,.9,{vol:.08,freq:3000,f2:9000,type:'highpass',wet:.6})},
+ shimmer(d=1,n=14){for(let i=0;i<n;i++)tone(pick(PENTA)*2,Math.random()*d,.35,{vol:.035,wet:.8})},
+ flip(t0=0){noise(t0,.06,{vol:.25,freq:2500,q:.8})},
+ flips(n,step){const k=Math.min(n,40);for(let i=0;i<k;i++)sfx.flip(i*step*n/k)},
+ whoosh(d=.7){noise(0,d,{vol:.18,freq:400,f2:4000,q:.7,wet:.4,attack:d*.6})},
+ stars(){sfx.whoosh(.8);for(let i=0;i<22;i++)tone(pick(PENTA)*(Math.random()<.5?1:2),.15+Math.random()*1.1,.5,{type:'triangle',vol:.05,wet:.8})},
+ roll(d){const n=Math.floor(d*30);for(let i=0;i<n;i++)noise(d*Math.pow(i/n,.85),.08,{vol:.05+.18*(i/n),freq:1800,q:.6,wet:.15});
+  tone(110,0,d,{type:'sawtooth',vol:.04,f2:440,attack:d*.8,wet:.3});tone(165,0,d,{type:'sawtooth',vol:.03,f2:660,attack:d*.8,wet:.3});
+  let t=0,gap=.22;while(t<d){tone(1800,t,.04,{type:'square',vol:.03,wet:0});t+=gap;gap=Math.max(.045,gap*.9)}},
+ tada(){[[523.25,659.25,783.99],[659.25,830.61,987.77],[783.99,987.77,1174.66,1567.98]].forEach((ch,j)=>ch.forEach(f=>{tone(f,j*.13,j===2?1.6:.25,{type:'sawtooth',vol:.045,wet:.5});tone(f*2,j*.13,j===2?1.4:.2,{type:'triangle',vol:.03})}));noise(.26,.3,{vol:.35,freq:6000,type:'highpass',wet:.6});sfx.shimmer(1.2)},
+ deal(n){for(let i=0;i<n;i++)noise(i*.06,.12,{vol:.13,freq:1200,f2:5000,q:.5,attack:.08})},
+ reveal(i){const f=PENTA[Math.min(i,PENTA.length-1)];tone(f,0,.8,{type:'triangle',vol:.12,wet:.5});tone(f*2,0,.5,{vol:.05});tone(f*1.5,.03,.5,{vol:.03});noise(0,.18,{vol:.12,freq:8000,type:'highpass',wet:.6});sfx.flip()},
+ finale(){[[523.25,0,.14],[523.25,.16,.14],[523.25,.32,.14],[698.46,.48,1.1]].forEach(([f,t,d])=>{tone(f,t,d,{type:'sawtooth',vol:.06,wet:.4});tone(f*1.5,t,d,{type:'square',vol:.022});tone(f/2,t,d,{type:'triangle',vol:.07})});
+  for(let i=0;i<170;i++){const t=.45+Math.random()*2.8,env=1-Math.abs(t-1.3)/2.2;noise(t,.03,{vol:.09*Math.max(.15,env),freq:1500+Math.random()*2500,q:1.5,wet:.3})}
+  sfx.shimmer(2.5,24)},
+ swap(){tone(300,0,.35,{vol:.1,f2:1200,wet:.3});sfx.flip(.25)}
+};
 
 /* ---------- background sky ---------- */
 const cv=$('#sky'),cx=cv.getContext('2d');let bg=[],shoot=null;
@@ -203,12 +227,12 @@ async function showGrid(){stage.innerHTML='';const p=pool();if(!p.length)return 
  ents.forEach(e=>{e.el.classList.add('notrans');e.el.style.opacity=0});
  gridLayout(ents);ents.forEach(e=>setPos(e,W/2,H/2));void stage.offsetWidth;
  ents.forEach(e=>{e.el.classList.remove('notrans');e.el.style.transitionDelay=(rnd()*.5*K).toFixed(2)+'s';e.el.style.opacity=''});
- gridLayout(ents);await sleep(1900);ents.forEach(e=>e.el.style.transitionDelay='');return true}
+ gridLayout(ents);sfx.shimmer(.8);await sleep(1900);ents.forEach(e=>e.el.style.transitionDelay='');return true}
 
 async function toStars(){const N=ents.length,step=Math.min(28,900/N);
- ents.forEach((e,i)=>setTimeout(()=>e.el.classList.add('flipped'),i*step*K));
+ sfx.flips(Math.min(N,40),step*K*N/Math.min(N,40)/1000);ents.forEach((e,i)=>setTimeout(()=>e.el.classList.add('flipped'),i*step*K));
  await sleep(950+N*step);
- sfx.whoosh();ents.forEach(e=>e.el.classList.add('sm'));
+ sfx.stars();ents.forEach(e=>e.el.classList.add('sm'));
  await sleep(650);
  ents.forEach(e=>{e.nx=.05+rnd()*.9;e.ny=.15+rnd()*.66;e.el.style.transitionDelay=(rnd()*.5*K).toFixed(2)+'s';scatterPos(e)});
  await sleep(1900);ents.forEach(e=>e.el.style.transitionDelay='')}
@@ -225,36 +249,36 @@ function swirl(dur){return new Promise(res=>{const {W,H}=area(),c={x:W/2,y:H*.52
 function pickK(n,k){const a=[...Array(n).keys()];for(let i=n-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a.slice(0,k)}
 
 async function draw(){const k=Math.min(Math.max(1,+$('#cnt').value||10),ents.length);
- sfx.rise(3.6*K);await swirl(3800);
+ sfx.roll(3.8*K);await swirl(3800);
  const win=pickK(ents.length,k).map(i=>ents[i]);win.forEach(e=>e.won=true);
  S.records.push({prize:$('#prize').value.trim(),names:win.map(e=>e.name),time:new Date().toLocaleString('zh-TW',{hour12:false})});
  if(S.noRepeat)S.won.push(...win.map(e=>e.idx));save();renderRec();
  const {W,H}=area(),c={x:W/2,y:H*.5},R=Math.min(W,H)*.25;
  ents.forEach(e=>{if(!e.won)e.el.classList.add('gone')});
  win.forEach((e,i)=>{e.el.classList.add('chosen');const a=-Math.PI/2+i*2*Math.PI/k;setPos(e,k===1?c.x:c.x+R*Math.cos(a)*1.25,k===1?c.y:c.y+R*Math.sin(a))});
- sfx.chime();await sleep(2700);
+ sfx.tada();await sleep(2700);
  ents.filter(e=>!e.won).forEach(e=>e.el.remove());ents=win;
- const L=rowLayout(k);win.forEach((e,i)=>setPos(e,L.pts[i].x,L.pts[i].y));
+ sfx.whoosh(.5);const L=rowLayout(k);win.forEach((e,i)=>setPos(e,L.pts[i].x,L.pts[i].y));
  await sleep(1450);
  win.forEach(e=>{setSize(e,L.cw,L.ch);e.el.classList.remove('chosen');e.el.classList.add('rows')});
  await sleep(60);
- win.forEach((e,i)=>setTimeout(()=>e.el.classList.remove('sm'),i*90*K));
+ sfx.deal(k);win.forEach((e,i)=>setTimeout(()=>e.el.classList.remove('sm'),i*90*K));
  await sleep(900+k*90)}
 
-async function reveal(){for(const e of ents){e.el.classList.remove('flipped');e.el.classList.add('revealed');sfx.ding();await wait(500)}await wait(400)}
+async function reveal(){let i=0;for(const e of ents){e.el.classList.remove('flipped');e.el.classList.add('revealed');sfx.reveal(i++);await wait(500)}sfx.finale();await wait(400)}
 
-async function run(){busy=true;setMain('抽獎中…',true);hint('');dropped=[];setK(.714);$('#banner').classList.add('off');await sleep(500);
+async function run(){busy=true;setMain('抽獎中…',true);hint('');dropped=[];sfx.start();setK(.357);$('#banner').classList.add('off');await wait(360);
  if(!await showGrid()){msg('名單是空的，請按「名單」填入');busy=false;setMain('開始抽獎');$('#banner').classList.remove('off');return}
- await wait(3000);setK(.476);await toStars();await sleep(800);await draw();await sleep(900);await reveal();
+ await wait(750);setK(.397);await toStars();await sleep(800);await draw();await sleep(900);await reveal();
  await wait(600);showMini();
  phase='done';document.body.classList.add('done');busy=false;setMain('');hint('滑鼠移到名字卡上按「重抽」，可替換該位得獎者')}
 
 async function redraw(e){const ex=new Set(ents.map(x=>x.idx).concat(S.won,dropped));const p=names.map((n,i)=>({n,i})).filter(o=>!ex.has(o.i));
  if(!p.length){msg('沒有其他可抽的人了');setTimeout(()=>msg(''),2000);return}
  busy=true;const slot=ents.indexOf(e),old=e.name;dropped.push(e.idx);
- e.el.classList.remove('revealed','sel');e.el.classList.add('flipped');await wait(450);
+ e.el.classList.remove('revealed','sel');e.el.classList.add('flipped');sfx.swap();await wait(450);
  const o=p[Math.floor(rnd()*p.length)];e.name=o.n;e.idx=o.i;e.nm.textContent=o.n;e.nm.style.fontSize=fontFor(o.n,parseFloat(e.card.style.width),parseFloat(e.card.style.height))+'px';
- e.el.classList.remove('flipped');e.el.classList.add('revealed');sfx.ding();
+ e.el.classList.remove('flipped');e.el.classList.add('revealed');sfx.reveal(7);
  const r=S.records[S.records.length-1];if(r){r.names[slot]=o.n;(r.redraw=r.redraw||[]).push(old+' → '+o.n)}
  if(S.noRepeat)S.won.push(o.i);save();renderRec();await wait(450);busy=false}
 
